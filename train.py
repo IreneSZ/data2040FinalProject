@@ -20,6 +20,9 @@ parser.add_argument('--crop_size', default=88, type=int, help='training images c
 parser.add_argument('--upscale_factor', default=4, type=int, choices=[2, 4, 8],
                     help='super resolution upscale factor')
 parser.add_argument('--num_epochs', default=100, type=int, help='train epoch number')
+parser.add_argument('--batch_size', '-bs', type=int, default=64)
+parser.add_argument('--train_set', type=str)
+parser.add_argument('--val_set', type=str)
 
 opt = parser.parse_args()
 
@@ -27,9 +30,9 @@ CROP_SIZE = opt.crop_size
 UPSCALE_FACTOR = opt.upscale_factor
 NUM_EPOCHS = opt.num_epochs
 
-train_set = TrainDatasetFromFolder('data/VOC2012/train', crop_size=CROP_SIZE, upscale_factor=UPSCALE_FACTOR)
-val_set = ValDatasetFromFolder('data/VOC2012/val', upscale_factor=UPSCALE_FACTOR)
-train_loader = DataLoader(dataset=train_set, num_workers=4, batch_size=64, shuffle=True)
+train_set = TrainDatasetFromFolder(opt.train_set, crop_size=CROP_SIZE, upscale_factor=UPSCALE_FACTOR)
+val_set = ValDatasetFromFolder(opt.val_set, upscale_factor=UPSCALE_FACTOR)
+train_loader = DataLoader(dataset=train_set, num_workers=4, batch_size=opt.batch_size, shuffle=True)
 val_loader = DataLoader(dataset=val_set, num_workers=4, batch_size=1, shuffle=False)
 
 netG = Generator(UPSCALE_FACTOR)
@@ -89,17 +92,20 @@ for epoch in range(1, NUM_EPOCHS + 1):
         fake_out = netD(fake_img).mean()
 
         g_loss = generator_criterion(fake_out, fake_img, real_img)
-        running_results['g_loss'] += g_loss.data[0] * batch_size
+        running_results['g_loss'] += g_loss.data.item() * batch_size
         d_loss = 1 - real_out + fake_out
-        running_results['d_loss'] += d_loss.data[0] * batch_size
-        running_results['d_score'] += real_out.data[0] * batch_size
-        running_results['g_score'] += fake_out.data[0] * batch_size
+        running_results['d_loss'] += d_loss.data.item() * batch_size
+        running_results['d_score'] += real_out.data.item() * batch_size
+        running_results['g_score'] += fake_out.data.item() * batch_size
 
         train_bar.set_description(desc='[%d/%d] Loss_D: %.4f Loss_G: %.4f D(x): %.4f D(G(z)): %.4f' % (
             epoch, NUM_EPOCHS, running_results['d_loss'] / running_results['batch_sizes'],
             running_results['g_loss'] / running_results['batch_sizes'],
             running_results['d_score'] / running_results['batch_sizes'],
             running_results['g_score'] / running_results['batch_sizes']))
+
+    if epoch % 100 > 0:
+        continue
 
     netG.eval()
     out_path = 'training_results/SRF_' + str(UPSCALE_FACTOR) + '/'
@@ -120,7 +126,7 @@ for epoch in range(1, NUM_EPOCHS + 1):
 
         batch_mse = ((sr - hr) ** 2).data.mean()
         valing_results['mse'] += batch_mse * batch_size
-        batch_ssim = pytorch_ssim.ssim(sr, hr).data[0]
+        batch_ssim = pytorch_ssim.ssim(sr, hr).data.item()
         valing_results['ssims'] += batch_ssim * batch_size
         valing_results['psnr'] = 10 * log10(1 / (valing_results['mse'] / valing_results['batch_sizes']))
         valing_results['ssim'] = valing_results['ssims'] / valing_results['batch_sizes']
@@ -153,8 +159,9 @@ for epoch in range(1, NUM_EPOCHS + 1):
 
     if epoch % 10 == 0 and epoch != 0:
         out_path = 'statistics/'
+        l = len(results['d_loss'])
         data_frame = pd.DataFrame(
             data={'Loss_D': results['d_loss'], 'Loss_G': results['g_loss'], 'Score_D': results['d_score'],
                   'Score_G': results['g_score'], 'PSNR': results['psnr'], 'SSIM': results['ssim']},
-            index=range(1, epoch + 1))
+            index=range(1, l + 1))
         data_frame.to_csv(out_path + 'srf_' + str(UPSCALE_FACTOR) + '_train_results.csv', index_label='Epoch')
