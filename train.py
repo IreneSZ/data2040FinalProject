@@ -9,6 +9,7 @@ import torchvision.utils as utils
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+from datetime import datetime
 
 import pytorch_ssim
 from data_utils import TrainDatasetFromFolder, ValDatasetFromFolder, display_transform
@@ -19,10 +20,14 @@ parser = argparse.ArgumentParser(description='Train Super Resolution Models')
 parser.add_argument('--crop_size', default=88, type=int, help='training images crop size')
 parser.add_argument('--upscale_factor', default=4, type=int, choices=[2, 4, 8],
                     help='super resolution upscale factor')
-parser.add_argument('--num_epochs', default=100, type=int, help='train epoch number')
+parser.add_argument('--num_epochs', default=1000, type=int, help='train epoch number')
 parser.add_argument('--batch_size', '-bs', type=int, default=64)
+parser.add_argument('--num_blocks', '-nb', type=int, default=8) # arg to modify generator
+parser.add_argument('--mode', '-m', type=int, default=0) # arg to modify discriminator
 parser.add_argument('--train_set', type=str)
 parser.add_argument('--val_set', type=str)
+parser.add_argument('--msg', '-M', type=str, help='Message', metavar='')
+
 
 opt = parser.parse_args()
 
@@ -35,9 +40,9 @@ val_set = ValDatasetFromFolder(opt.val_set, upscale_factor=UPSCALE_FACTOR)
 train_loader = DataLoader(dataset=train_set, num_workers=4, batch_size=opt.batch_size, shuffle=True)
 val_loader = DataLoader(dataset=val_set, num_workers=4, batch_size=1, shuffle=False)
 
-netG = Generator(UPSCALE_FACTOR)
+netG = Generator(UPSCALE_FACTOR, opt.num_blocks)
 print('# generator parameters:', sum(param.numel() for param in netG.parameters()))
-netD = Discriminator()
+netD = Discriminator(opt.mode)
 print('# discriminator parameters:', sum(param.numel() for param in netD.parameters()))
 
 generator_criterion = GeneratorLoss()
@@ -51,6 +56,19 @@ optimizerG = optim.Adam(netG.parameters())
 optimizerD = optim.Adam(netD.parameters())
 
 results = {'d_loss': [], 'g_loss': [], 'd_score': [], 'g_score': [], 'psnr': [], 'ssim': []}
+
+# save different versions of the changed model
+now = datetime.now()
+date = now.strftime("%m-%d")
+timestamp = now.strftime("%H:%M:%S")
+if not opt.msg:
+    opt.train_dir = 'train/%s/%s' %(date, timestamp)
+else:
+    opt.train_dir = 'train/%s/%s-%s' %(date, opt.msg, timestamp)
+if not os.path.isdir(opt.train_dir):
+    os.makedirs(opt.train_dir)
+
+
 
 for epoch in range(1, NUM_EPOCHS + 1):
     train_bar = tqdm(train_loader)
@@ -108,7 +126,7 @@ for epoch in range(1, NUM_EPOCHS + 1):
         continue
 
     netG.eval()
-    out_path = 'training_results/SRF_' + str(UPSCALE_FACTOR) + '/'
+    out_path = '/users/guest324/scratch/' + str(UPSCALE_FACTOR) + '/' + opt.train_dir + '/'
     if not os.path.exists(out_path):
         os.makedirs(out_path)
     val_bar = tqdm(val_loader)
@@ -146,9 +164,12 @@ for epoch in range(1, NUM_EPOCHS + 1):
         utils.save_image(image, out_path + 'epoch_%d_index_%d.png' % (epoch, index), padding=5)
         index += 1
 
+        
+
+        
     # save model parameters
-    torch.save(netG.state_dict(), 'epochs/netG_epoch_%d_%d.pth' % (UPSCALE_FACTOR, epoch))
-    torch.save(netD.state_dict(), 'epochs/netD_epoch_%d_%d.pth' % (UPSCALE_FACTOR, epoch))
+    torch.save(netG.state_dict(), '%s/netG_epoch_%d_%d.pth' % (opt.train_dir, UPSCALE_FACTOR, epoch))
+    torch.save(netD.state_dict(), '%s/netD_epoch_%d_%d.pth' % (opt.train_dir, UPSCALE_FACTOR, epoch))
     # save loss\scores\psnr\ssim
     results['d_loss'].append(running_results['d_loss'] / running_results['batch_sizes'])
     results['g_loss'].append(running_results['g_loss'] / running_results['batch_sizes'])
@@ -158,7 +179,9 @@ for epoch in range(1, NUM_EPOCHS + 1):
     results['ssim'].append(valing_results['ssim'])
 
     if epoch % 10 == 0 and epoch != 0:
-        out_path = 'statistics/'
+        out_path = 'statistics/' + opt.train_dir + '/'
+        if not os.path.exists(out_path):
+            os.makedirs(out_path)        
         l = len(results['d_loss'])
         data_frame = pd.DataFrame(
             data={'Loss_D': results['d_loss'], 'Loss_G': results['g_loss'], 'Score_D': results['d_score'],

@@ -5,43 +5,51 @@ from torch import nn
 
 
 class Generator(nn.Module):
-    def __init__(self, scale_factor):
+    def __init__(self, scale_factor, num_blocks):
         upsample_block_num = int(math.log(scale_factor, 2))
 
         super(Generator, self).__init__()
-        self.block1 = nn.Sequential(
+        assert num_blocks >= 4
+        block1 = nn.Sequential(
             nn.Conv2d(3, 64, kernel_size=9, padding=4),
             nn.PReLU()
         )
-        self.block2 = ResidualBlock(64)
-        self.block3 = ResidualBlock(64)
-        self.block4 = ResidualBlock(64)
-        self.block5 = ResidualBlock(64)
-        self.block6 = ResidualBlock(64)
-        self.block7 = nn.Sequential(
+        middle_blocks = [ResidualBlock(64) for _ in range(num_blocks - 3)]
+        block_penult = nn.Sequential(
             nn.Conv2d(64, 64, kernel_size=3, padding=1),
             nn.BatchNorm2d(64)
         )
-        block8 = [UpsampleBLock(64, 2) for _ in range(upsample_block_num)]
-        block8.append(nn.Conv2d(64, 3, kernel_size=9, padding=4))
-        self.block8 = nn.Sequential(*block8)
+        block_ult = [UpsampleBLock(64, 2) for _ in range(upsample_block_num)]
+        block_ult.append(nn.Conv2d(64, 3, kernel_size=9, padding=4))
+        block_ult = nn.Sequential(*block_ult)
+        self.blocks = nn.ModuleList([block1] + middle_blocks + [block_penult, block_ult])
 
     def forward(self, x):
-        block1 = self.block1(x)
-        block2 = self.block2(block1)
-        block3 = self.block3(block2)
-        block4 = self.block4(block3)
-        block5 = self.block5(block4)
-        block6 = self.block6(block5)
-        block7 = self.block7(block6)
-        block8 = self.block8(block1 + block7)
+        
+        for i, block in enumerate(self.blocks[:-1]):
+            x = block(x)
+            if i == 0:
+                first_x = x
+                
+        x = self.blocks[-1](first_x + x)
+        
 
-        return (F.tanh(block8) + 1) / 2
+        return (F.tanh(x) + 1) / 2
+        
 
 
 class Discriminator(nn.Module):
-    def __init__(self):
+    def __init__(self, mode):
         super(Discriminator, self).__init__()
+        assert mode in [0,1,2]
+        if mode == 1:
+            self._get_model_1()
+        elif mode == 0:
+            self._get_model_0()
+        else:
+            self._get_model_2()
+    
+    def _get_model_0(self):
         self.net = nn.Sequential(
             nn.Conv2d(3, 64, kernel_size=3, padding=1),
             nn.LeakyReLU(0.2),
@@ -74,6 +82,70 @@ class Discriminator(nn.Module):
             nn.BatchNorm2d(512),
             nn.LeakyReLU(0.2),
 
+            nn.AdaptiveAvgPool2d(1),
+            nn.Conv2d(512, 1024, kernel_size=1),
+            nn.LeakyReLU(0.2),
+            nn.Conv2d(1024, 1, kernel_size=1)
+        )
+        
+        
+    def _get_model_1(self): # 5 layers with 512 channels
+        self.net = nn.Sequential(
+            nn.Conv2d(3, 64, kernel_size=3, padding=1),
+            nn.LeakyReLU(0.2),
+
+            nn.Conv2d(64, 512, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(512),
+            nn.LeakyReLU(0.2),
+
+            nn.Conv2d(512, 512, kernel_size=3, padding=1),
+            nn.BatchNorm2d(512),
+            nn.LeakyReLU(0.2),
+
+            nn.Conv2d(512, 512, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(512),
+            nn.LeakyReLU(0.2),
+
+            nn.AdaptiveAvgPool2d(1),
+            nn.Conv2d(512, 1024, kernel_size=1),
+            nn.LeakyReLU(0.2),
+            nn.Conv2d(1024, 1, kernel_size=1)
+        )
+
+        
+    def _get_model_2(self): # 9 layers with 128 channels
+        self.net = nn.Sequential(
+            nn.Conv2d(3, 64, kernel_size=3, padding=1),
+            nn.LeakyReLU(0.2),
+
+            nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(128),
+            nn.LeakyReLU(0.2),
+
+            nn.Conv2d(128, 128, kernel_size=3, padding=1),
+            nn.BatchNorm2d(128),
+            nn.LeakyReLU(0.2),
+            
+            nn.Conv2d(128, 128, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(128),
+            nn.LeakyReLU(0.2),
+
+            nn.Conv2d(128, 128, kernel_size=3, padding=1),
+            nn.BatchNorm2d(128),
+            nn.LeakyReLU(0.2),
+
+            nn.Conv2d(128, 128, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(128),
+            nn.LeakyReLU(0.2),
+
+            nn.Conv2d(128, 128, kernel_size=3, padding=1),
+            nn.BatchNorm2d(128),
+            nn.LeakyReLU(0.2),
+
+            nn.Conv2d(128, 512, kernel_size=3, stride=2, padding=1),
+            nn.BatchNorm2d(512),
+            nn.LeakyReLU(0.2),
+            
             nn.AdaptiveAvgPool2d(1),
             nn.Conv2d(512, 1024, kernel_size=1),
             nn.LeakyReLU(0.2),
