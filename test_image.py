@@ -1,5 +1,6 @@
 import argparse
 import time
+from pathlib import Path
 
 import torch
 from PIL import Image
@@ -36,4 +37,6 @@ out = model(image)
 elapsed = (time.clock() - start)
 print('cost' + str(elapsed) + 's')
 out_img = ToPILImage()(out[0].data.cpu())
-out_img.save('out_srf_' + str(UPSCALE_FACTOR) + '_' + IMAGE_NAME)
+out_path = Path('test_outputs')
+out_path.mkdir(exist_ok=True, parents=True)
+out_img.save(str(out_path / Path(opt.image_name).name))
