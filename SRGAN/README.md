@@ -1,3 +1,12 @@
+## For the final project, I made the following change to this repo:
+
+### Changed the dataset: used Standford Dog Dataset. The idea is to see how the model can generalize to images of different objects. Test images are chosen from my own photo collections.
+
+### Modified the model: for both the generator and the discriminator, I created several modified versions. The goal is to see how the number of layers, number of channels and choice of activation functions can affect the result. 
+
+---------------------------------------------------------------------------------------------------------------------------
+# Below is the original READ.ME by leftthomas
+---------------------------------------------------------------------------------------------------------------------------
 # SRGAN
 A PyTorch implementation of SRGAN based on CVPR 2017 paper 
 [Photo-Realistic Single Image Super-Resolution Using a Generative Adversarial Network](https://arxiv.org/abs/1609.04802).
